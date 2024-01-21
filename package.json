@@ -1,0 +1,39 @@
+{
+  "name": "gmail-listener",
+  "version": "1.0.0",
+  "description": "Un outil pour écouter les emails Gmail entrants et enclencher des actions",
+  "main": "app.js",
+  "scripts": {
+    "lint": "eslint --fix ./*.js",
+    "dev": "eslint --fix ./*.js ./scripts/*.js && node app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mendoc/gmail-listener.git"
+  },
+  "keywords": [
+    "gmail",
+    "webhook"
+  ],
+  "author": "Dimitri ONGOUA",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/mendoc/gmail-listener/issues"
+  },
+  "homepage": "https://github.com/mendoc/gmail-listener#readme",
+  "dependencies": {
+    "@google-cloud/local-auth": "2.1.0",
+    "@google-cloud/pubsub": "^4.1.1",
+    "express": "^4.18.2",
+    "googleapis": "105",
+    "node-telegram-bot-api": "^0.64.0"
+  },
+  "devDependencies": {
+    "dotenv": "^16.3.2",
+    "eslint": "^8.0.1",
+    "eslint-config-standard": "^17.1.0",
+    "eslint-plugin-import": "^2.25.2",
+    "eslint-plugin-n": "^15.0.0 || ^16.0.0 ",
+    "eslint-plugin-promise": "^6.0.0"
+  }
+}
