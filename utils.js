@@ -4,10 +4,9 @@ const path = require("path");
 const process = require("process");
 const { google } = require("googleapis");
 const TelegramBot = require("node-telegram-bot-api");
-const { authenticate } = require("@google-cloud/local-auth");
 
 const TOKEN_PATH = path.join(process.cwd(), "token.json");
-const CREDENTIALS_PATH = path.join(process.cwd(), "credentials.json");
+// const CREDENTIALS_PATH = path.join(process.cwd(), "credentials.json");
 
 // Function to log the data object to the console
 function logCompleteJsonObject (jsonObject) {
@@ -88,7 +87,7 @@ async function watch (auth) {
       labelIds: ["INBOX"],
       topicName: process.env.TOPIC_NAME
     }
-  });
+  }).catch(err => console.log(err.message));
 }
 
 async function sendTelegramMessage (message) {
@@ -105,14 +104,15 @@ async function sendTelegramMessage (message) {
  * @return {Promise<void>}
  */
 async function saveCredentials (client) {
-  const content = await fs.readFile(CREDENTIALS_PATH);
+  // const content = await fs.readFile(CREDENTIALS_PATH);
+  const content = process.env.CREDENTIALS_JSON;
   const keys = JSON.parse(content);
   const key = keys.installed || keys.web;
   const payload = JSON.stringify({
     type: "authorized_user",
     client_id: key.client_id,
     client_secret: key.client_secret,
-    refresh_token: client.credentials.refresh_token
+    refresh_token: client.credentials.access_token
   });
   await fs.writeFile(TOKEN_PATH, payload);
 }
@@ -121,23 +121,6 @@ async function saveCredentials (client) {
  * Load or request or authorization to call APIs.
  *
  */
-async function authorize () {
-  const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
-
-  let client = await loadSavedCredentialsIfExist();
-  if (client) {
-    return client;
-  }
-  client = await authenticate({
-    scopes: SCOPES,
-    keyfilePath: CREDENTIALS_PATH
-  });
-  console.log(client.redirectUri);
-  if (client.credentials) {
-    await saveCredentials(client);
-  }
-  return client;
-}
 
 module.exports = {
   logCompleteJsonObject,
@@ -147,5 +130,5 @@ module.exports = {
   base64ToString,
   watch,
   sendTelegramMessage,
-  authorize
+  saveCredentials
 };

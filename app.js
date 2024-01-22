@@ -5,13 +5,21 @@ const {
   getMessage,
   watch,
   sendTelegramMessage,
-  authorize
+  saveCredentials
 } = require("./utils");
+const { OAuth2Client } = require("google-auth-library");
 const express = require("express");
 const app = express();
 const port = process.env.PORT || 5555;
 
 let previousHistoryId = 0;
+
+const keys = require("./credentials.json");
+const oAuth2Client = new OAuth2Client(
+  keys.web.client_id,
+  keys.web.client_secret,
+  keys.web.redirect_uris[0]
+);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -34,13 +42,26 @@ app.get("/history/:hid", async (req, res) => {
 
 app.get("/watch", async (req, res) => {
   const cred = await loadSavedCredentialsIfExist();
-  const result = watch(cred);
-  res.json(result);
+  const result = await watch(cred);
+  res.json({ result });
 });
 
 app.get("/auth", async (req, res) => {
-  const result = await authorize();
-  res.json(result);
+  if (req.query.code) {
+    const code = req.query.code;
+    const r = await oAuth2Client.getToken(code);
+    oAuth2Client.setCredentials(r.tokens);
+    await saveCredentials(oAuth2Client);
+    res.redirect("/watch");
+  } else {
+    // Generate the url that will be used for the consent dialog.
+    const authorizeUrl = oAuth2Client.generateAuthUrl({
+      access_type: "offline",
+      scope: "https://www.googleapis.com/auth/gmail.readonly"
+    });
+
+    res.redirect(authorizeUrl);
+  }
 });
 
 app.post("/notify", async (req, res) => {
