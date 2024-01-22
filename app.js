@@ -14,7 +14,7 @@ const port = process.env.PORT || 5555;
 
 let previousHistoryId = 0;
 
-const keys = require("./credentials.json");
+const keys = JSON.parse(process.env.CREDENTIALS_JSON);
 const oAuth2Client = new OAuth2Client(
   keys.web.client_id,
   keys.web.client_secret,
