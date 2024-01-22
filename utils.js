@@ -4,6 +4,10 @@ const path = require("path");
 const process = require("process");
 const { google } = require("googleapis");
 const TelegramBot = require("node-telegram-bot-api");
+const { authenticate } = require("@google-cloud/local-auth");
+
+const TOKEN_PATH = path.join(process.cwd(), "token.json");
+const CREDENTIALS_PATH = path.join(process.cwd(), "credentials.json");
 
 // Function to log the data object to the console
 function logCompleteJsonObject (jsonObject) {
@@ -12,7 +16,6 @@ function logCompleteJsonObject (jsonObject) {
 
 // Load the credentials from the token.json file
 async function loadSavedCredentialsIfExist () {
-  const TOKEN_PATH = path.join(process.cwd(), "token.json");
   try {
     const content = await fs.readFile(TOKEN_PATH);
     const credentials = JSON.parse(content);
@@ -25,10 +28,12 @@ async function loadSavedCredentialsIfExist () {
 // Call the API to get message
 async function getMessage (auth, messageId) {
   const gmail = google.gmail({ version: "v1", auth });
-  const res = await gmail.users.messages.get({
-    userId: "me",
-    id: messageId
-  }).catch(err => console.log(err.message));
+  const res = await gmail.users.messages
+    .get({
+      userId: "me",
+      id: messageId
+    })
+    .catch((err) => console.log(err.message));
   return res ? reduceMessage(res.data) : null;
 }
 
@@ -88,11 +93,50 @@ async function watch (auth) {
 
 async function sendTelegramMessage (message) {
   const bot = new TelegramBot(process.env.BOT_TOKEN);
-  return await bot
-    .sendMessage(process.env.CHAT_ID, message)
-    .catch((err) => {
-      return err.message;
-    });
+  return await bot.sendMessage(process.env.CHAT_ID, message).catch((err) => {
+    return err.message;
+  });
+}
+
+/**
+ * Serializes credentials to a file comptible with GoogleAUth.fromJSON.
+ *
+ * @param {OAuth2Client} client
+ * @return {Promise<void>}
+ */
+async function saveCredentials (client) {
+  const content = await fs.readFile(CREDENTIALS_PATH);
+  const keys = JSON.parse(content);
+  const key = keys.installed || keys.web;
+  const payload = JSON.stringify({
+    type: "authorized_user",
+    client_id: key.client_id,
+    client_secret: key.client_secret,
+    refresh_token: client.credentials.refresh_token
+  });
+  await fs.writeFile(TOKEN_PATH, payload);
+}
+
+/**
+ * Load or request or authorization to call APIs.
+ *
+ */
+async function authorize () {
+  const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
+
+  let client = await loadSavedCredentialsIfExist();
+  if (client) {
+    return client;
+  }
+  client = await authenticate({
+    scopes: SCOPES,
+    keyfilePath: CREDENTIALS_PATH
+  });
+  console.log(client.redirectUri);
+  if (client.credentials) {
+    await saveCredentials(client);
+  }
+  return client;
 }
 
 module.exports = {
@@ -102,5 +146,6 @@ module.exports = {
   getHistory,
   base64ToString,
   watch,
-  sendTelegramMessage
+  sendTelegramMessage,
+  authorize
 };

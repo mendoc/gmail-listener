@@ -4,7 +4,8 @@ const {
   base64ToString,
   getMessage,
   watch,
-  sendTelegramMessage
+  sendTelegramMessage,
+  authorize
 } = require("./utils");
 const express = require("express");
 const app = express();
@@ -34,6 +35,11 @@ app.get("/history/:hid", async (req, res) => {
 app.get("/watch", async (req, res) => {
   const cred = await loadSavedCredentialsIfExist();
   const result = watch(cred);
+  res.json(result);
+});
+
+app.get("/auth", async (req, res) => {
+  const result = await authorize();
   res.json(result);
 });
 
