@@ -1,11 +1,12 @@
 const {
   loadSavedCredentialsIfExist,
   getHistory,
-  base64ToString,
   getMessage,
   watch,
   sendTelegramMessage,
-  saveConfigData
+  saveConfigData,
+  base64ToString,
+  getConfigData
 } = require("./utils");
 const { OAuth2Client } = require("google-auth-library");
 const express = require("express");
@@ -36,12 +37,35 @@ app.get("/history/:hid", async (req, res) => {
   const history = await getHistory(cred, historyId).catch((err) => {
     error.error = true;
     error.message = err.message;
-    console.log(err.message);
+    console.log("#1:", err.message);
   });
   if (error.error) {
     res.json(error);
   } else {
-    res.json({ reqHistoryId: req.params.hid, history });
+    const historyUrl = `https://${req.get(
+      "host"
+    )}/history/${previousHistoryId}`;
+    res.json({
+      reqHistoryId: req.params.hid,
+      history,
+      nextHistory: historyUrl
+    });
+  }
+});
+
+app.get("/message/:mid", async (req, res) => {
+  const error = { error: false };
+  const cred = await loadSavedCredentialsIfExist();
+  const messageId = req.params.mid;
+  const message = await getMessage(cred, messageId).catch((err) => {
+    error.error = true;
+    error.message = err.message;
+    console.log("#2:", err.message);
+  });
+  if (error.error) {
+    res.json(error);
+  } else {
+    res.json({ reqId: req.params.mid, message });
   }
 });
 
@@ -57,15 +81,16 @@ app.get("/auth", async (req, res) => {
     const error = { error: true };
 
     const r = await oAuth2Client.getToken(code).catch((err) => {
-      console.log(err.message);
+      console.log("#3:", err.message);
       error.message = err.message;
     });
 
     if (r) {
       oAuth2Client.setCredentials(r.tokens);
-      await saveConfigData("access_token", oAuth2Client.credentials.access_token).catch((err) =>
-        console.log(err.message)
-      );
+      await saveConfigData(
+        "access_token",
+        oAuth2Client.credentials.access_token
+      ).catch((err) => console.log("#4:", err.message));
       res.redirect("/watch");
       return;
     }
@@ -83,30 +108,46 @@ app.get("/auth", async (req, res) => {
 
 app.post("/notify", async (req, res) => {
   const cred = await loadSavedCredentialsIfExist();
+
   if (req.body.message) {
+    const notifBodyStr = base64ToString(req.body.message.data);
+    const notifBody = JSON.parse(notifBodyStr);
+    previousHistoryId = await getConfigData("historyId");
+    console.log("Previous History ID", previousHistoryId);
+
+    if (!previousHistoryId) {
+      console.log("Init History ID:", notifBody.historyId);
+      saveConfigData("historyId", notifBody.historyId);
+    }
+
     const historyObj = await getHistory(cred, previousHistoryId).catch((err) =>
-      console.log(err.message)
+      console.log("#5:", err.message)
     );
     const messages = [];
     if (historyObj && historyObj.history) {
       let currentMessageId = "";
       for (const historyItem of historyObj.history) {
-        const messageId = historyItem.messages[0].id;
-        const message = await getMessage(cred, messageId);
-        if (message && currentMessageId !== messageId) {
-          messages.push(message);
-          currentMessageId = messageId;
-          sendTelegramMessage(
-            `${message.subject}\n${message.snippet}\n\n${message.from}\n${message.date}\n`
-          );
+        previousHistoryId = historyItem.id;
+        /* const messageRead = "labelsRemoved" in historyItem &&
+            historyItem.labelsRemoved[0].labelIds.includes("UNREAD"); */
+        if ("messagesAdded" in historyItem) {
+          const messageId = historyItem.messages[0].id;
+          const message = await getMessage(cred, messageId);
+          if (message && currentMessageId !== messageId) {
+            messages.push(message);
+            currentMessageId = messageId;
+            sendTelegramMessage(
+              `${message.subject}\n${message.snippet}\n\n${message.from}\n${message.date}\n`
+            );
+          }
         }
       }
+      console.log("Last History ID:", previousHistoryId);
+      saveConfigData("historyId", previousHistoryId);
+    } else {
+      console.log("Set History ID:", notifBody.historyId);
+      saveConfigData("historyId", notifBody.historyId);
     }
-    const notifBodyStr = base64ToString(req.body.message.data);
-    const notifBody = JSON.parse(notifBodyStr);
-    console.log("prev:", previousHistoryId, "curr:", notifBody.historyId);
-    previousHistoryId = notifBody.historyId;
-    console.log(messages);
     res.json(messages);
   } else {
     res.json({ error: true, message: "Historique introuvable" });
