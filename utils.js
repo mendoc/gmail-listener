@@ -1,12 +1,15 @@
 require("dotenv").config();
-const fs = require("fs").promises;
-const path = require("path");
 const process = require("process");
 const { google } = require("googleapis");
 const TelegramBot = require("node-telegram-bot-api");
+const { Client } = require("pg");
 
-const TOKEN_PATH = path.join(process.cwd(), "token.json");
-// const CREDENTIALS_PATH = path.join(process.cwd(), "credentials.json");
+const clientConfig = {
+  user: process.env.PGUSER,
+  host: process.env.PGHOST,
+  database: process.env.PGDATABASE,
+  password: process.env.PGPASSWORD
+};
 
 // Function to log the data object to the console
 function logCompleteJsonObject (jsonObject) {
@@ -16,8 +19,14 @@ function logCompleteJsonObject (jsonObject) {
 // Load the credentials from the token.json file
 async function loadSavedCredentialsIfExist () {
   try {
-    const content = await fs.readFile(TOKEN_PATH);
-    const credentials = JSON.parse(content);
+    const accessToken = await getConfigData("access_token");
+    const keys = getCredenialsKeys();
+    const credentials = {
+      type: "authorized_user",
+      client_id: keys.client_id,
+      client_secret: keys.client_secret,
+      refresh_token: accessToken
+    };
     return google.auth.fromJSON(credentials);
   } catch (err) {
     return null;
@@ -81,13 +90,17 @@ async function getHistory (auth, historyId) {
 // Connect to Pub Sub
 async function watch (auth) {
   const gmail = google.gmail({ version: "v1", auth });
-  return await gmail.users.watch({
-    userId: "me",
-    requestBody: {
-      labelIds: ["INBOX"],
-      topicName: process.env.TOPIC_NAME
-    }
-  }).catch(err => console.log(err.message));
+  return await gmail.users
+    .watch({
+      userId: "me",
+      requestBody: {
+        labelIds: ["INBOX"],
+        topicName: process.env.TOPIC_NAME
+      }
+    })
+    .catch((err) => {
+      return { error: true, message: err.message };
+    });
 }
 
 async function sendTelegramMessage (message) {
@@ -97,30 +110,45 @@ async function sendTelegramMessage (message) {
   });
 }
 
-/**
- * Serializes credentials to a file comptible with GoogleAUth.fromJSON.
- *
- * @param {OAuth2Client} client
- * @return {Promise<void>}
- */
-async function saveCredentials (client) {
-  // const content = await fs.readFile(CREDENTIALS_PATH);
-  const content = process.env.CREDENTIALS_JSON;
-  const keys = JSON.parse(content);
-  const key = keys.installed || keys.web;
-  const payload = JSON.stringify({
-    type: "authorized_user",
-    client_id: key.client_id,
-    client_secret: key.client_secret,
-    refresh_token: client.credentials.access_token
-  });
-  await fs.writeFile(TOKEN_PATH, payload);
+async function saveConfigData (configName, configValue, table = "config") {
+  const client = new Client(clientConfig);
+  await client.connect();
+  try {
+    let sql = `SELECT * FROM ${table} WHERE name = '${configName}'`;
+    const { rows } = await client.query(sql);
+    const values = [configName, configValue];
+    if (rows[0]) {
+      sql = `UPDATE ${table} SET value = $2 WHERE name = $1 RETURNING *`;
+    } else {
+      sql = `INSERT INTO ${table}(name, value) VALUES($1, $2) RETURNING *`;
+    }
+    await client.query(sql, values);
+  } catch (err) {
+    console.error(err);
+  } finally {
+    await client.end();
+  }
 }
 
-/**
- * Load or request or authorization to call APIs.
- *
- */
+async function getConfigData (configName, table = "config") {
+  const client = new Client(clientConfig);
+  await client.connect();
+  try {
+    const sql = `SELECT value FROM ${table} WHERE name = '${configName}'`;
+    const { rows } = await client.query(sql);
+    return rows[0] ? rows[0].value : null;
+  } catch (err) {
+    console.error(err);
+  } finally {
+    await client.end();
+  }
+}
+
+function getCredenialsKeys () {
+  const content = process.env.CREDENTIALS_JSON;
+  const keys = JSON.parse(content);
+  return keys.installed || keys.web;
+}
 
 module.exports = {
   logCompleteJsonObject,
@@ -130,5 +158,6 @@ module.exports = {
   base64ToString,
   watch,
   sendTelegramMessage,
-  saveCredentials
+  saveConfigData,
+  getConfigData
 };

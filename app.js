@@ -5,7 +5,7 @@ const {
   getMessage,
   watch,
   sendTelegramMessage,
-  saveCredentials
+  saveConfigData
 } = require("./utils");
 const { OAuth2Client } = require("google-auth-library");
 const express = require("express");
@@ -23,6 +23,11 @@ const oAuth2Client = new OAuth2Client(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.get("/", async (req, res) => {
+  const fullUrl = `https://${req.get("host")}/auth`;
+  res.json({ authUrl: fullUrl });
+});
 
 app.get("/history/:hid", async (req, res) => {
   const error = { error: false };
@@ -43,16 +48,28 @@ app.get("/history/:hid", async (req, res) => {
 app.get("/watch", async (req, res) => {
   const cred = await loadSavedCredentialsIfExist();
   const result = await watch(cred);
-  res.json({ result });
+  res.json(result);
 });
 
 app.get("/auth", async (req, res) => {
   if (req.query.code) {
     const code = req.query.code;
-    const r = await oAuth2Client.getToken(code);
-    oAuth2Client.setCredentials(r.tokens);
-    await saveCredentials(oAuth2Client);
-    res.redirect("/watch");
+    const error = { error: true };
+
+    const r = await oAuth2Client.getToken(code).catch((err) => {
+      console.log(err.message);
+      error.message = err.message;
+    });
+
+    if (r) {
+      oAuth2Client.setCredentials(r.tokens);
+      await saveConfigData("access_token", oAuth2Client.credentials.access_token).catch((err) =>
+        console.log(err.message)
+      );
+      res.redirect("/watch");
+      return;
+    }
+    res.json(error);
   } else {
     // Generate the url that will be used for the consent dialog.
     const authorizeUrl = oAuth2Client.generateAuthUrl({
